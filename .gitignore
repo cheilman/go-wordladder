@@ -1,3 +1,9 @@
+gowordladder # output from build
+
+#
+# Default Github Ignore File
+#
+
 # Compiled Object files, Static and Dynamic libs (Shared Objects)
 *.o
 *.a
