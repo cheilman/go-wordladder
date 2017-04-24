@@ -1,4 +1,5 @@
-gowordladder # output from build
+# output from 'go build'
+gowordladder
 
 #
 # Default Github Ignore File
