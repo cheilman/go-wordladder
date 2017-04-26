@@ -8,9 +8,9 @@ import (
 )
 
 type WordNode struct {
-	word      string      // the word itself
-	forestTag int         // what forest the word lives in
-	neighbors []*WordNode // list of one-character neighbors
+	word      string    // the word itself
+	forestTag int       // what forest the word lives in
+	neighbors []*string // list of one-character neighbors
 }
 
 const wordFile = "/usr/share/dict/words"
@@ -121,12 +121,15 @@ func shortestPath(s1 string, s2 string) []string {
 			}
 
 			// check neighbors that haven't been visited
-			for _, n := range node.wn.neighbors {
-				if !visited[n.word] {
-					visited[n.word] = true
+			for _, neighborWord := range node.wn.neighbors {
+
+				if !visited[*neighborWord] {
+					visited[*neighborWord] = true
+
+					var neighborNode = wordGraph[*neighborWord]
 
 					// Add nodes with the parent set
-					q.push(&WNPathQueueNode{wn: n, parent: node})
+					q.push(&WNPathQueueNode{wn: neighborNode, parent: node})
 				}
 			}
 		}
@@ -200,26 +203,26 @@ func exploreForest(startWord *WordNode) int {
 
 			// Figure out the neighbors
 			var neighbors = loadNeighbors(node)
-			node.neighbors = make([]*WordNode, len(neighbors))
+			node.neighbors = make([]*string, len(neighbors))
 			copy(node.neighbors, neighbors)
 
 			// Search neighbors
 			for _, neigh := range neighbors {
-				q.push(neigh)
+				q.push(wordGraph[*neigh])
 			}
 		}
 	}
 
 	return retval
 }
-func loadNeighbors(node *WordNode) []*WordNode {
-	var retval = []*WordNode{}
+func loadNeighbors(node *WordNode) []*string {
+	var retval = []*string{}
 
 	for _, v := range wordGraph {
 		var d = distance(node.word, v.word)
 
 		if d == 1 {
-			retval = append(retval, v)
+			retval = append(retval, &v.word)
 		}
 	}
 
