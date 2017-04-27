@@ -2,75 +2,125 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"unicode"
 )
 
 type WordNode struct {
-	word      string    // the word itself
-	forestTag int       // what forest the word lives in
-	neighbors []*string // list of one-character neighbors
+	Word      string    // the word itself
+	ForestTag int       // what forest the word lives in
+	Neighbors []*string // list of one-character neighbors
 }
 
 const wordFile = "/usr/share/dict/words"
+const forestGraphFile = "wordForest.json"
 
 var wordGraph = make(map[int]map[string]*WordNode)
 var curForest = 1 // valid forest tags are positive integers
 
 func main() {
 	//
-	// Load all words into graph
+	// See if we have a pre-processed forest graph
 	//
-	fmt.Printf("Loading words from %v.\n", wordFile)
 
-	var f, err = os.Open(wordFile)
+	// Open a RO file
+	decodeFile, err := os.Open(forestGraphFile)
 	if err != nil {
-		panic(err)
-	}
 
-	var scanner = bufio.NewScanner(f)
-	for scanner.Scan() {
-		var word = scanner.Text()
-		if isValidWord(&word) {
-			// Add to the graph
-			var l = len(word)
+		//
+		// Load all words into graph
+		//
+		fmt.Printf("Loading words from %v.\n", wordFile)
 
-			_, present := wordGraph[l]
-			if !present {
-				wordGraph[l] = make(map[string]*WordNode)
-			}
-			wordGraph[l][word] = &WordNode{word, 0, nil}
+		var f, err = os.Open(wordFile)
+		if err != nil {
+			panic(err)
 		}
-	}
 
-	//
-	// Start assigning forests and neighbors
-	//
-	fmt.Printf("Starting to assign forests and analyze neighbors.  %v distinct word lengths in graph.\n", len(wordGraph))
-	for l, subgraph := range wordGraph {
-		fmt.Printf("Looking at words of size %v, there are %v words\n", l, len(subgraph))
-		for _, v := range subgraph {
-			if v.forestTag <= 0 {
-				// It's unassigned so far, need to figure out where it belongs.
-				//fmt.Printf("Starting with word '%v'\n", v.word)
-				//var explored = exploreForest(&v)
-				exploreForest(v)
-				//fmt.Printf("-->  Forest %v: %v nodes\n", curForest, explored)
+		var scanner = bufio.NewScanner(f)
+		for scanner.Scan() {
+			var word = scanner.Text()
+			if isValidWord(&word) {
+				// Add to the graph
+				var l = len(word)
 
-				// Move along to the next forest
-				curForest++
-			} else {
-				// Assigned, ignore it
+				_, present := wordGraph[l]
+				if !present {
+					wordGraph[l] = make(map[string]*WordNode)
+				}
+				wordGraph[l][word] = &WordNode{word, 0, nil}
 			}
+		}
+
+		//
+		// Start assigning forests and neighbors
+		//
+		fmt.Printf("Starting to assign forests and analyze neighbors.  %v distinct word length(s) in graph.\n", len(wordGraph))
+		for l, subgraph := range wordGraph {
+			fmt.Printf("Looking at words of size %v, there are %v words\n", l, len(subgraph))
+			for _, v := range subgraph {
+				if v.ForestTag <= 0 {
+					// It's unassigned so far, need to figure out where it belongs.
+					//fmt.Printf("Starting with word '%v'\n", v.Word)
+					//var explored = exploreForest(&v)
+					exploreForest(v)
+					//fmt.Printf("-->  Forest %v: %v nodes\n", curForest, explored)
+
+					// Move along to the next forest
+					curForest++
+				} else {
+					// Assigned, ignore it
+				}
+			}
+		}
+
+		fmt.Printf("Found %v forest(s).\n", curForest-1)
+
+		//
+		// Serialize forest map
+		//
+
+		forestFile, err := os.Create(forestGraphFile)
+		if err != nil {
+			panic(err)
+		}
+
+		// Since this is a binary format large parts of it will be unreadable
+		encoder := json.NewEncoder(forestFile)
+
+		// Write to the file
+		if err := encoder.Encode(wordGraph); err != nil {
+			panic(err)
+		}
+		forestFile.Close()
+	} else {
+
+		//
+		// Load the pre-processed graph into memory
+		//
+
+		fmt.Printf("Reading pre-processed graph from %v.\n", forestGraphFile)
+
+		defer decodeFile.Close()
+
+		// Create a decoder
+		decoder := json.NewDecoder(decodeFile)
+
+		// Decode -- We need to pass a pointer otherwise accounts2 isn't modified
+		decoder.Decode(&wordGraph)
+
+		// And let's just make sure it all worked
+		fmt.Printf("Loaded pre-processed forest graph.  %v distinct word lengths in graph.\n", len(wordGraph))
+		for l, subgraph := range wordGraph {
+			fmt.Printf("There are %v words of size %v.\n", len(subgraph), l)
 		}
 	}
 
 	//
 	// Run some tests
 	//
-	fmt.Printf("Found %v forest(s).\n", curForest-1)
-
 	var pairs = [][]string{{"cat", "dog"}, {"ape", "man"}, {"pig", "sty"}, {"pen", "ink"}, {"one", "two"}, {"bat", "cry"},
 		{"goat", "fish"}, {"bake", "farm"}, {"lawn", "brat"},
 		{"snake", "cards"}, {"plant", "graph"}}
@@ -104,7 +154,7 @@ func areTwoWordsConnected(s1 string, s2 string) bool {
 		return false
 	}
 
-	return subgraph[s1].forestTag == subgraph[s2].forestTag
+	return subgraph[s1].ForestTag == subgraph[s2].ForestTag
 }
 
 func shortestPath(s1 string, s2 string) []string {
@@ -131,16 +181,16 @@ func shortestPath(s1 string, s2 string) []string {
 		if node == nil {
 			return nil
 		} else {
-			//fmt.Printf("--------->  Looking at '%v'\n", node.wn.word)
+			//fmt.Printf("--------->  Looking at '%v'\n", node.wn.Word)
 
-			if node.wn.word == s1 {
+			if node.wn.Word == s1 {
 				target = node
 				//fmt.Printf("--------->  Found target!  Breaking out.  Node: %+v\n", target)
 				break
 			}
 
 			// check neighbors that haven't been visited
-			for _, neighborWord := range node.wn.neighbors {
+			for _, neighborWord := range node.wn.Neighbors {
 
 				if !visited[*neighborWord] {
 					visited[*neighborWord] = true
@@ -167,7 +217,7 @@ func shortestPath(s1 string, s2 string) []string {
 			break
 		}
 
-		retval = append(retval, cur.wn.word)
+		retval = append(retval, cur.wn.Word)
 		cur = cur.parent
 	}
 
@@ -177,7 +227,7 @@ func shortestPath(s1 string, s2 string) []string {
 func isValidWord(s *string) bool {
 	//// Limit ourselves on length
 	//var l = len(*s)
-	//if l < 3 || l > 5 {
+	//if l < 3 || l > 3 {
 	//	return false
 	//}
 
@@ -199,7 +249,7 @@ func isValidWord(s *string) bool {
 // Returns number of nodes explored
 func exploreForest(startWord *WordNode) int {
 	var retval = 0
-	var subgraph = wordGraph[len(startWord.word)]
+	var subgraph = wordGraph[len(startWord.Word)]
 
 	var q = WNQueue{}
 	q.push(startWord)
@@ -211,22 +261,22 @@ func exploreForest(startWord *WordNode) int {
 			break
 		} else {
 			// Filter out visited people
-			if node.forestTag > 0 {
+			if node.ForestTag > 0 {
 				continue
 			}
 
 			retval++
-			//fmt.Printf("----->  Looking at node '%v' (%v)\n", node.word, node.forestTag)
+			//fmt.Printf("----->  Looking at node '%v' (%v)\n", node.Word, node.ForestTag)
 
 			// Tag the forest
-			node.forestTag = curForest
+			node.ForestTag = curForest
 
 			// Figure out the neighbors
 			var neighbors = loadNeighbors(node)
-			node.neighbors = make([]*string, len(neighbors))
-			copy(node.neighbors, neighbors)
+			node.Neighbors = make([]*string, len(neighbors))
+			copy(node.Neighbors, neighbors)
 
-			// Search neighbors
+			// Search Neighbors
 			for _, neigh := range neighbors {
 				q.push(subgraph[*neigh])
 			}
@@ -237,13 +287,13 @@ func exploreForest(startWord *WordNode) int {
 }
 func loadNeighbors(node *WordNode) []*string {
 	var retval = []*string{}
-	var subgraph = wordGraph[len(node.word)]
+	var subgraph = wordGraph[len(node.Word)]
 
 	for _, v := range subgraph {
-		var d = distance(node.word, v.word)
+		var d = distance(node.Word, v.Word)
 
 		if d == 1 {
-			retval = append(retval, &v.word)
+			retval = append(retval, &v.Word)
 		}
 	}
 
