@@ -15,7 +15,7 @@ type WordNode struct {
 
 const wordFile = "/usr/share/dict/words"
 
-var wordGraph = make(map[string]*WordNode)
+var wordGraph = make(map[int]map[string]*WordNode)
 var curForest = 1 // valid forest tags are positive integers
 
 func main() {
@@ -34,26 +34,35 @@ func main() {
 		var word = scanner.Text()
 		if isValidWord(&word) {
 			// Add to the graph
-			wordGraph[word] = &WordNode{word, 0, nil}
+			var l = len(word)
+
+			_, present := wordGraph[l]
+			if !present {
+				wordGraph[l] = make(map[string]*WordNode)
+			}
+			wordGraph[l][word] = &WordNode{word, 0, nil}
 		}
 	}
 
 	//
 	// Start assigning forests and neighbors
 	//
-	fmt.Printf("Starting to assign forests and analyze neighbors.  %v words in graph.\n", len(wordGraph))
-	for _, v := range wordGraph {
-		if v.forestTag <= 0 {
-			// It's unassigned so far, need to figure out where it belongs.
-			//fmt.Printf("Starting with word '%v'\n", v.word)
-			//var explored = exploreForest(&v)
-			exploreForest(v)
-			//fmt.Printf("-->  Forest %v: %v nodes\n", curForest, explored)
+	fmt.Printf("Starting to assign forests and analyze neighbors.  %v distinct word lengths in graph.\n", len(wordGraph))
+	for l, subgraph := range wordGraph {
+		fmt.Printf("Looking at words of size %v, there are %v words\n", l, len(subgraph))
+		for _, v := range subgraph {
+			if v.forestTag <= 0 {
+				// It's unassigned so far, need to figure out where it belongs.
+				//fmt.Printf("Starting with word '%v'\n", v.word)
+				//var explored = exploreForest(&v)
+				exploreForest(v)
+				//fmt.Printf("-->  Forest %v: %v nodes\n", curForest, explored)
 
-			// Move along to the next forest
-			curForest++
-		} else {
-			// Assigned, ignore it
+				// Move along to the next forest
+				curForest++
+			} else {
+				// Assigned, ignore it
+			}
 		}
 	}
 
@@ -83,11 +92,19 @@ func main() {
 }
 
 func areTwoWordsConnected(s1 string, s2 string) bool {
-	if wordGraph[s1] == nil || wordGraph[s2] == nil {
+	// Length check
+	var l = len(s1)
+	if l != len(s2) {
 		return false
 	}
 
-	return wordGraph[s1].forestTag == wordGraph[s2].forestTag
+	// Valid words check
+	var subgraph = wordGraph[l]
+	if subgraph[s1] == nil || subgraph[s2] == nil {
+		return false
+	}
+
+	return subgraph[s1].forestTag == subgraph[s2].forestTag
 }
 
 func shortestPath(s1 string, s2 string) []string {
@@ -98,13 +115,15 @@ func shortestPath(s1 string, s2 string) []string {
 		return nil
 	}
 
+	var subgraph = wordGraph[len(s1)]
+
 	// We actually search backwards (s2 -> s1), so we don't have to reverse the string at the end
 
 	var visited = make(map[string]bool)
 	var target *WNPathQueueNode = nil
 
 	var q = WNPathQueue{}
-	q.push(&WNPathQueueNode{wn: wordGraph[s2], parent: nil})
+	q.push(&WNPathQueueNode{wn: subgraph[s2], parent: nil})
 
 	for {
 		var node = q.pop()
@@ -126,7 +145,7 @@ func shortestPath(s1 string, s2 string) []string {
 				if !visited[*neighborWord] {
 					visited[*neighborWord] = true
 
-					var neighborNode = wordGraph[*neighborWord]
+					var neighborNode = subgraph[*neighborWord]
 
 					// Add nodes with the parent set
 					q.push(&WNPathQueueNode{wn: neighborNode, parent: node})
@@ -156,11 +175,11 @@ func shortestPath(s1 string, s2 string) []string {
 }
 
 func isValidWord(s *string) bool {
-	// Limit ourselves on length
-	var l = len(*s)
-	if l < 3 || l > 5 {
-		return false
-	}
+	//// Limit ourselves on length
+	//var l = len(*s)
+	//if l < 3 || l > 5 {
+	//	return false
+	//}
 
 	for _, c := range *s {
 		// Skip words with non-letters
@@ -180,6 +199,7 @@ func isValidWord(s *string) bool {
 // Returns number of nodes explored
 func exploreForest(startWord *WordNode) int {
 	var retval = 0
+	var subgraph = wordGraph[len(startWord.word)]
 
 	var q = WNQueue{}
 	q.push(startWord)
@@ -208,7 +228,7 @@ func exploreForest(startWord *WordNode) int {
 
 			// Search neighbors
 			for _, neigh := range neighbors {
-				q.push(wordGraph[*neigh])
+				q.push(subgraph[*neigh])
 			}
 		}
 	}
@@ -217,8 +237,9 @@ func exploreForest(startWord *WordNode) int {
 }
 func loadNeighbors(node *WordNode) []*string {
 	var retval = []*string{}
+	var subgraph = wordGraph[len(node.word)]
 
-	for _, v := range wordGraph {
+	for _, v := range subgraph {
 		var d = distance(node.word, v.word)
 
 		if d == 1 {
