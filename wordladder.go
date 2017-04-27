@@ -34,20 +34,23 @@ func main() {
 		//
 		fmt.Printf("Loading words from %v.\n", wordFile)
 
+		// Open the file
 		var f, err = os.Open(wordFile)
 		if err != nil {
 			panic(err)
 		}
 
+		// Read each word into the graph
 		var scanner = bufio.NewScanner(f)
 		for scanner.Scan() {
 			var word = scanner.Text()
 			if isValidWord(&word) {
-				// Add to the graph
+				// Add to the appropriate subgraph (by length)
 				var l = len(word)
 
 				_, present := wordGraph[l]
 				if !present {
+					// Create new map of the right length
 					wordGraph[l] = make(map[string]*WordNode)
 				}
 				wordGraph[l][word] = &WordNode{word, 0, nil}
@@ -57,16 +60,13 @@ func main() {
 		//
 		// Start assigning forests and neighbors
 		//
-		fmt.Printf("Starting to assign forests and analyze neighbors.  %v distinct word length(s) in graph.\n", len(wordGraph))
+		fmt.Printf("Assigning forests and analyzing neighbors.  %v distinct word length(s) in graph.\n", len(wordGraph))
 		for l, subgraph := range wordGraph {
 			fmt.Printf("Looking at words of size %v, there are %v words\n", l, len(subgraph))
 			for _, v := range subgraph {
 				if v.ForestTag <= 0 {
 					// It's unassigned so far, need to figure out where it belongs.
-					//fmt.Printf("Starting with word '%v'\n", v.Word)
-					//var explored = exploreForest(&v)
 					exploreForest(v)
-					//fmt.Printf("-->  Forest %v: %v nodes\n", curForest, explored)
 
 					// Move along to the next forest
 					curForest++
@@ -87,7 +87,7 @@ func main() {
 			panic(err)
 		}
 
-		// Since this is a binary format large parts of it will be unreadable
+		// Dump it to JSON
 		encoder := json.NewEncoder(forestFile)
 
 		// Write to the file
@@ -108,7 +108,7 @@ func main() {
 		// Create a decoder
 		decoder := json.NewDecoder(decodeFile)
 
-		// Decode -- We need to pass a pointer otherwise accounts2 isn't modified
+		// Decode -- We need to pass a pointer otherwise wordGraph isn't modified
 		decoder.Decode(&wordGraph)
 
 		// And let's just make sure it all worked
@@ -141,6 +141,8 @@ func main() {
 
 }
 
+// Does a path exist between two strings?  O(1) check by looking at matching forest
+// tags (the work was done in pre-processing).
 func areTwoWordsConnected(s1 string, s2 string) bool {
 	// Length check
 	var l = len(s1)
@@ -157,17 +159,18 @@ func areTwoWordsConnected(s1 string, s2 string) bool {
 	return subgraph[s1].ForestTag == subgraph[s2].ForestTag
 }
 
+// Return a shortest path from s1 to s2.  Nil if no path exists.
+// Could be optimized with a priority queue and some hamming distance calculations (maybe that's A*?)
 func shortestPath(s1 string, s2 string) []string {
-	//fmt.Printf("--------->  checking %v -> %v\n", s1, s2)
-
 	if !areTwoWordsConnected(s1, s2) {
-		//fmt.Printf("--------->  no path.\n")
+		// No path exists
 		return nil
 	}
 
 	var subgraph = wordGraph[len(s1)]
 
-	// We actually search backwards (s2 -> s1), so we don't have to reverse the string at the end
+	// We actually search backwards (s2 -> s1), so we don't have to reverse the string
+	// at the end (since the path is built by following parent links up from the end)
 
 	var visited = make(map[string]bool)
 	var target *WNPathQueueNode = nil
@@ -181,11 +184,9 @@ func shortestPath(s1 string, s2 string) []string {
 		if node == nil {
 			return nil
 		} else {
-			//fmt.Printf("--------->  Looking at '%v'\n", node.wn.Word)
-
+			// Have we found our target word?
 			if node.wn.Word == s1 {
-				target = node
-				//fmt.Printf("--------->  Found target!  Breaking out.  Node: %+v\n", target)
+				target = node // Save to follow the path back up
 				break
 			}
 
@@ -205,6 +206,7 @@ func shortestPath(s1 string, s2 string) []string {
 	}
 
 	if target == nil {
+		// Didn't find it.  I'm not sure if this can happen, we should be safe from the areTwoWordsConnected() check
 		return nil
 	}
 
@@ -224,13 +226,8 @@ func shortestPath(s1 string, s2 string) []string {
 	return retval
 }
 
+// Will we import this word from the word list into our forest graph?
 func isValidWord(s *string) bool {
-	//// Limit ourselves on length
-	//var l = len(*s)
-	//if l < 3 || l > 3 {
-	//	return false
-	//}
-
 	for _, c := range *s {
 		// Skip words with non-letters
 		if !unicode.IsLetter(c) {
@@ -246,6 +243,8 @@ func isValidWord(s *string) bool {
 	return true
 }
 
+// Finds neighbors for a node, explores them (and finds neighbors for those nodes), and assigns all
+// connected nodes the same forest tag.
 // Returns number of nodes explored
 func exploreForest(startWord *WordNode) int {
 	var retval = 0
@@ -285,6 +284,9 @@ func exploreForest(startWord *WordNode) int {
 
 	return retval
 }
+
+// Figure out the neighbors of a node by filtering the word list, rather than by generation of all possible words.
+// Should be faster depending on length of word and size of dictionary.
 func loadNeighbors(node *WordNode) []*string {
 	var retval = []*string{}
 	var subgraph = wordGraph[len(node.Word)]
@@ -300,6 +302,8 @@ func loadNeighbors(node *WordNode) []*string {
 	return retval
 }
 
+// How many changes are needed to go from one word to another?
+// We only use this to find neighbors, could be optimized to break out after more than one difference.
 func distance(s1 string, s2 string) int {
 	if len(s1) != len(s2) {
 		return 999999
@@ -316,6 +320,7 @@ func distance(s1 string, s2 string) int {
 	return retval
 }
 
+// A queue of word nodes.  For our forest exploration BFS.
 type WNQueue struct {
 	nodes []*WordNode // nodes in the queue
 }
@@ -334,6 +339,7 @@ func (q *WNQueue) pop() *WordNode {
 	}
 }
 
+// A queue of word nodes with pathing information.  For our shortest path BFS.
 type WNPathQueueNode struct {
 	wn     *WordNode
 	parent *WNPathQueueNode
