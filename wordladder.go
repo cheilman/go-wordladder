@@ -431,8 +431,21 @@ func (g *WordGraph) AddWord(word string) {
 }
 
 func (g *WordGraph) ExploreForests() {
+	totalParallel := g.GetTotalDistinctWordLengths()
+	c := make(chan int, totalParallel)
+
 	for _, subgraph := range g.Graphs {
-		subgraph.ExploreAllForests()
+		go func(sg *WordGraphOfSameLength) {
+			fmt.Printf("[%v] Working on subgraph for %v-length words.\n", sg.WordLength, sg.WordLength)
+			sg.ExploreAllForests()
+			fmt.Printf("--> [%v] Processed %v words into %v forests.\n", sg.WordLength, sg.GetTotalWords(), sg.GetTotalForests())
+			c <- 1
+		}(subgraph)
+	}
+
+	// Wait for all to finish
+	for i := 0; i < totalParallel; i++ {
+		<-c
 	}
 }
 
